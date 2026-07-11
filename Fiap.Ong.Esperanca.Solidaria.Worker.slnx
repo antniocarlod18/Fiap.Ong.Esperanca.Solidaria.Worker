@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="Fiap.Ong.Esperanca.Solidaria.Worker/Fiap.Ong.Esperanca.Solidaria.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="Fiap.Ong.Esperanca.Solidaria.Worker.Tests/Fiap.Ong.Esperanca.Solidaria.Worker.Tests.csproj" />
+  </Folder>
+</Solution>
