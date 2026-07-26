@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="Fiap.Ong.Esperanca.Solidaria.Worker/Fiap.Ong.Esperanca.Solidaria.Worker.csproj" />
+    <Project Path="Fiap.Ong.Esperanca.Solidaria.Contracts/Fiap.Ong.Esperanca.Solidaria.Contracts.csproj" Id="567aaaaa-e1a8-4fd1-a5b9-821807ae6890" />
+    <Project Path="Fiap.Ong.Esperanca.Solidaria.Worker.Api/Fiap.Ong.Esperanca.Solidaria.Worker.Api.csproj" Id="f9946125-8940-4bae-9493-c8a6d2106df6" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="Fiap.Ong.Esperanca.Solidaria.Worker.Tests/Fiap.Ong.Esperanca.Solidaria.Worker.Tests.csproj" />

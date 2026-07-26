@@ -1,10 +1,7 @@
-using System;
-using System.Threading.Tasks;
 using MassTransit;
-using Microsoft.Extensions.Logging;
 using Fiap.Ong.Esperanca.Solidaria.Contracts.Events;
 
-namespace Fiap.Ong.Esperanca.Solidaria.Worker.Consumers;
+namespace Fiap.Ong.Esperanca.Solidaria.Worker.Api.Consumers;
 
 public class DonationReceivedConsumer : IConsumer<DonationReceivedEvent>
 {
