@@ -1,11 +1,3 @@
-using Fiap.Ong.Esperanca.Solidaria.Worker.Api.Consumers;
-using Fiap.Ong.Esperanca.Solidaria.Worker.Api.Filters;
-using Fiap.Ong.Esperanca.Solidaria.Worker.Api.HealthChecks;
-using MassTransit;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Serilog;
-using System.Text.Json;
 using Elastic.Apm.SerilogEnricher;
 using Elastic.Channels;
 using Elastic.CommonSchema.Serilog;
@@ -13,6 +5,25 @@ using Elastic.Ingest.Elasticsearch;
 using Elastic.Ingest.Elasticsearch.DataStreams;
 using Elastic.Serilog.Sinks;
 using Elastic.Transport;
+using Fiap.Ong.Esperanca.Solidaria.Api.Endpoints;
+using Fiap.Ong.Esperanca.Solidaria.Worker.Api.Consumers;
+using Fiap.Ong.Esperanca.Solidaria.Worker.Api.Filters;
+using Fiap.Ong.Esperanca.Solidaria.Worker.Api.HealthChecks;
+using Fiap.Ong.Esperanca.Solidaria.Worker.Application.Interfaces;
+using Fiap.Ong.Esperanca.Solidaria.Worker.Application.Services;
+using Fiap.Ong.Esperanca.Solidaria.Worker.Application.Settings;
+using Fiap.Ong.Esperanca.Solidaria.Worker.Domain.Entities;
+using Fiap.Ong.Esperanca.Solidaria.Worker.Domain.Repositories;
+using Fiap.Ong.Esperanca.Solidaria.Worker.Infra.Data.Repositories;
+using MassTransit;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
+using MongoDB.Driver;
+using Serilog;
+using System.Text;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -74,6 +85,34 @@ builder.Host.UseSerilog((context, config) =>
 
 builder.Services.AddAllElasticApm();
 
+// Bind settings
+builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
+builder.Services.Configure<MongoSettings>(builder.Configuration.GetSection("MongoSettings"));
+var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>() ?? new JwtSettings();
+builder.Services.AddSingleton(jwtSettings);
+
+var mongoSettings = builder.Configuration.GetSection("MongoSettings").Get<MongoSettings>();
+var mongoClient = new MongoClient(mongoSettings.ConnectionString);
+var mongoDb = mongoClient.GetDatabase(mongoSettings.DatabaseName);
+
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidAudience = jwtSettings.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret))
+        };
+    });
+
+builder.Services.AddAuthorization();
+
 // Health Checks
 builder.Services
     .AddHealthChecks()
@@ -89,6 +128,9 @@ builder.Services
         "masstransit",
         failureStatus: HealthStatus.Unhealthy,
         tags: ["ready"]);
+
+builder.Services.AddScoped<IDonationService, DonationService>();
+builder.Services.AddSingleton<IDonationRepository>(sp => new MongoDonationRepository(mongoDb.GetCollection<Donation>("donations")));
 
 var app = builder.Build();
 
@@ -108,6 +150,16 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
     Predicate = check => check.Tags.Contains("ready"),
     ResponseWriter = WriteHealthResponse
 });
+
+// Global exception handling middleware
+app.UseMiddleware<Fiap.Ong.Esperanca.Solidaria.Api.Middlewares.ExceptionHandlingMiddleware>();
+
+app.UseHttpsRedirection();
+
+app.MapDonationEndpoints();
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 await app.RunAsync();
 

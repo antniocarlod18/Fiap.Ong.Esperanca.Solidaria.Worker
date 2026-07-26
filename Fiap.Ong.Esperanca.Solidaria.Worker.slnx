@@ -2,6 +2,9 @@
   <Folder Name="/src/">
     <Project Path="Fiap.Ong.Esperanca.Solidaria.Contracts/Fiap.Ong.Esperanca.Solidaria.Contracts.csproj" Id="567aaaaa-e1a8-4fd1-a5b9-821807ae6890" />
     <Project Path="Fiap.Ong.Esperanca.Solidaria.Worker.Api/Fiap.Ong.Esperanca.Solidaria.Worker.Api.csproj" Id="f9946125-8940-4bae-9493-c8a6d2106df6" />
+    <Project Path="Fiap.Ong.Esperanca.Solidaria.Worker.Application/Fiap.Ong.Esperanca.Solidaria.Worker.Application.csproj" Id="38b9ba43-c182-4629-a856-2d1906ec2354" />
+    <Project Path="Fiap.Ong.Esperanca.Solidaria.Worker.Domain/Fiap.Ong.Esperanca.Solidaria.Worker.Domain.csproj" Id="45e71389-47a4-4572-b38f-5cedf9e9ced2" />
+    <Project Path="Fiap.Ong.Esperanca.Solidaria.Worker.Infra.Data/Fiap.Ong.Esperanca.Solidaria.Worker.Infra.Data.csproj" Id="9ba199bc-44ff-4178-8631-5f8f72db229e" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="Fiap.Ong.Esperanca.Solidaria.Worker.Tests/Fiap.Ong.Esperanca.Solidaria.Worker.Tests.csproj" />

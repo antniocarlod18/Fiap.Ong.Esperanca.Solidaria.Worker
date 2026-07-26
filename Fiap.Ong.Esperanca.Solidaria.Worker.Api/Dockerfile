@@ -14,6 +14,9 @@ ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["Fiap.Ong.Esperanca.Solidaria.Worker.Api/Fiap.Ong.Esperanca.Solidaria.Worker.Api.csproj", "Fiap.Ong.Esperanca.Solidaria.Worker.Api/"]
 COPY ["Fiap.Ong.Esperanca.Solidaria.Contracts/Fiap.Ong.Esperanca.Solidaria.Contracts.csproj", "Fiap.Ong.Esperanca.Solidaria.Contracts/"]
+COPY ["Fiap.Ong.Esperanca.Solidaria.Worker.Application/Fiap.Ong.Esperanca.Solidaria.Worker.Application.csproj", "Fiap.Ong.Esperanca.Solidaria.Worker.Application/"]
+COPY ["Fiap.Ong.Esperanca.Solidaria.Worker.Domain/Fiap.Ong.Esperanca.Solidaria.Worker.Domain.csproj", "Fiap.Ong.Esperanca.Solidaria.Worker.Domain/"]
+COPY ["Fiap.Ong.Esperanca.Solidaria.Worker.Infra.Data/Fiap.Ong.Esperanca.Solidaria.Worker.Infra.Data.csproj", "Fiap.Ong.Esperanca.Solidaria.Worker.Infra.Data/"]
 RUN dotnet restore "./Fiap.Ong.Esperanca.Solidaria.Worker.Api/Fiap.Ong.Esperanca.Solidaria.Worker.Api.csproj"
 COPY . .
 WORKDIR "/src/Fiap.Ong.Esperanca.Solidaria.Worker.Api"
