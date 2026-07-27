@@ -29,6 +29,7 @@ public class DonationReceivedConsumer : IConsumer<DonationReceivedEvent>
         // create donation
         var donation = new Donation
         {
+            Id = Guid.NewGuid().ToString(),
             CampaignId = msg.CampaignId,
             CampaignTitle = msg.CampaignTitle,
             DonorId = msg.DonorId,
