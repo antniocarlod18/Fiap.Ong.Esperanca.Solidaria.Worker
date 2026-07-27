@@ -35,7 +35,7 @@ public class DonationReceivedConsumer : IConsumer<DonationReceivedEvent>
             DonorId = msg.DonorId,
             Amount = msg.Amount,
             Status = Domain.Enums.DonationStatus.Processed,
-            PaymentMethod = Domain.Enums.PaymentMethod.Pix
+            PaymentMethod = msg.PaymentMethod
         };
 
         await _donationRepository.CreateAsync(donation);

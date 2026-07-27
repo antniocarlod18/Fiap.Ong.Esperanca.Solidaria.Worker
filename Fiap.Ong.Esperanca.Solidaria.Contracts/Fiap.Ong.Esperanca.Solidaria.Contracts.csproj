@@ -6,4 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Fiap.Ong.Esperanca.Solidaria.Worker.Domain\Fiap.Ong.Esperanca.Solidaria.Worker.Domain.csproj" />
+  </ItemGroup>
+
 </Project>
