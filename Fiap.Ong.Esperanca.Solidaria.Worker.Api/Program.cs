@@ -21,6 +21,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
+using Prometheus;
 using Serilog;
 using System.Text;
 using System.Text.Json;
@@ -160,6 +161,8 @@ app.MapDonationEndpoints();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseHttpMetrics();
+app.MapMetrics();
 
 await app.RunAsync();
 
