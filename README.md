@@ -1,0 +1,459 @@
+# Fiap ONG Esperanca Solidaria - Documentacao Tecnica Consolidada
+
+## 1. Visao Geral da Solucao
+
+- `Fiap.Ong.Esperanca.Solidaria` (Backend API)
+- `Fiap.Ong.Esperanca.Solidaria.BlazorApp` (Frontend Blazor Server)
+- `Fiap.Ong.Esperanca.Solidaria.Worker` (Worker/API de doacoes)
+- `Fiap.Ong.Esperanca.Solidaria.Infraestructure` (manifests Kubernetes e operacao)
+
+A solucao implementa uma plataforma de doacoes para ONG com:
+
+- API principal para autenticacao, usuarios, campanhas e registro de intencao de doacao
+- Worker/API para processamento da doacao e consulta de historico de doacoes
+- Frontend Blazor Server para uso por doadores e gestores
+- Infraestrutura Kubernetes para MongoDB, RabbitMQ e stack Elastic/APM/Kibana
+- Coleta de metricas via Prometheus endpoints (`/metrics`) e ServiceMonitors
+
+## 2. Projetos
+
+### 2.1 Backend (`Fiap.Ong.Esperanca.Solidaria.slnx`)
+
+| Projeto | Tipo | Responsabilidade |
+|---|---|---|
+| `Fiap.Ong.Esperanca.Solidaria.Api` | ASP.NET Core Minimal API | Endpoints HTTP, autenticacao JWT, autorizacao, health checks, metrics, mensageria |
+| `Fiap.Ong.Esperanca.Solidaria.Application` | Class Library | Regras de negocio, servicos de dominio e consumers de eventos |
+| `Fiap.Ong.Esperanca.Solidaria.Contracts` | Class Library | Contratos de eventos (`DonationReceivedEvent`, `DonationProcessedEvent`) |
+| `Fiap.Ong.Esperanca.Solidaria.Domain` | Class Library | Entidades, enums e contratos de repositorio |
+| `Fiap.Ong.Esperanca.Solidaria.Infra.Data` | Class Library | Implementacoes MongoDB de repositorios |
+| `Fiap.Ong.Esperanca.Solidaria.Tests` | Testes | Testes unitarios do backend |
+
+### 2.2 Frontend (`Fiap.Ong.Esperanca.Solidaria.BlazorApp.slnx`)
+
+| Projeto | Tipo | Responsabilidade |
+|---|---|---|
+| `Fiap.Ong.Esperanca.Solidaria.BlazorApp` | Blazor Server (.NET 10) | UI, autenticacao no cliente, consumo das APIs, health checks locais, metrics e logging |
+
+### 2.3 Worker (`Fiap.Ong.Esperanca.Solidaria.Worker.slnx`)
+
+| Projeto | Tipo | Responsabilidade |
+|---|---|---|
+| `Fiap.Ong.Esperanca.Solidaria.Worker.Api` | ASP.NET Core Minimal API | Consumo/publicacao de eventos, endpoint de consulta de doacoes (`GET /donations`), JWT, metrics |
+| `Fiap.Ong.Esperanca.Solidaria.Worker.Application` | Class Library | Servicos de aplicacao de doacoes |
+| `Fiap.Ong.Esperanca.Solidaria.Worker.Domain` | Class Library | Entidade `Donation`, enums de pagamento/status |
+| `Fiap.Ong.Esperanca.Solidaria.Worker.Infra.Data` | Class Library | Repositorio MongoDB de doacoes |
+| `Fiap.Ong.Esperanca.Solidaria.Contracts` | Class Library | Contratos de eventos |
+| `Fiap.Ong.Esperanca.Solidaria.Worker.Tests` | Testes | Testes de consumer/eventos |
+| `Fiap.Ong.Esperanca.Solidaria.Worker` | Executavel adicional | Worker alternativo com listener HTTP manual em `localhost:9000` para health |
+
+## 3. Principais Tecnologias
+
+| Categoria | Tecnologias observadas |
+|---|---|
+| Runtime | .NET 10 (`net10.0`) |
+| Backend/API | ASP.NET Core Minimal APIs |
+| Frontend | Blazor Server + MudBlazor |
+| Banco de dados | MongoDB (`MongoDB.Driver`) |
+| Mensageria | RabbitMQ + MassTransit |
+| Auth | JWT Bearer |
+| Validacao | FluentValidation |
+| Observabilidade | Serilog, Elastic APM, Elasticsearch Sink, Prometheus (`prometheus-net`) |
+| Infra | Dockerfiles multi-stage, Kubernetes manifests (YAML) |
+| CI/CD | GitHub Actions (`docker-image.yml`) |
+
+## 4. Arquitetura Utilizada
+
+Estilo de arquitetura em camadas com separacao de responsabilidades (API/Application/Domain/Infra), aproximando-se de Clean Architecture simplificada.
+
+### 4.1 Diagrama de Contexto
+
+```mermaid
+flowchart LR
+    U[Usuario] --> BZ[Blazor Server Frontend]
+    BZ --> API[Backend API]
+    BZ --> WAPI[Worker API]
+
+    API --> MONGO1[(MongoDB: esperanca-solidaria-db)]
+    WAPI --> MONGO2[(MongoDB: esperanca-solidaria-donations-db)]
+
+    API -->|Publish DonationReceivedEvent| RMQ[(RabbitMQ)]
+    RMQ -->|Consume DonationReceivedEvent| WAPI
+    WAPI -->|Publish DonationProcessedEvent| RMQ
+    RMQ -->|Consume DonationProcessedEvent| API
+
+    API --> ES[(Elasticsearch)]
+    WAPI --> ES
+    BZ --> ES
+    API --> APM[APM Server]
+    WAPI --> APM
+    BZ --> APM
+    ES --> KIB[Kibana]
+```
+
+### 4.2 Fluxo Principal de Doacao
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Blazor
+    participant Backend
+    participant RabbitMQ
+    participant Worker
+    participant MongoDonations
+    participant MongoCampaigns
+
+    User->>Blazor: Criar doacao
+    Blazor->>Backend: POST /donations (JWT)
+    Backend->>RabbitMQ: Publish DonationReceivedEvent
+    RabbitMQ->>Worker: Consume DonationReceivedEvent
+    Worker->>MongoDonations: Persiste doacao processada
+    Worker->>RabbitMQ: Publish DonationProcessedEvent
+    RabbitMQ->>Backend: Consume DonationProcessedEvent
+    Backend->>MongoCampaigns: Atualiza collectedAmount/status
+```
+
+## 5. Microsservicos Existentes e Responsabilidades
+
+| Componente | Papel | Endpoints principais |
+|---|---|---|
+| `backend-api` | Nucleo da plataforma (auth, usuarios, campanhas, intencao de doacao) | `/auth/login`, `/users/*`, `/admin/users/*`, `/campaigns/*`, `/admin/campaigns/*`, `/donations`, `/health*`, `/metrics` |
+| `worker` (imagem `worker-api`) | Processamento/consulta de doacoes + consumer RabbitMQ | `/donations`, `/health*`, `/metrics` |
+| `blazor-frontend` | Interface web e orquestracao de chamadas HTTP | `/health*`, `/metrics` |
+
+Observacao: existe tambem o projeto executavel `Fiap.Ong.Esperanca.Solidaria.Worker` (sem API ASP.NET tradicional), mas o deploy Kubernetes referencia a imagem `Fiap.Ong.Esperanca.Solidaria.Worker.Api`.
+
+## 6. Comunicacao Sincrona (HTTP)
+
+| Origem | Destino | Evidencia no codigo | Objetivo |
+|---|---|---|---|
+| Blazor | Backend API | `HttpClient` nomeado `OngApi` | Login, cadastro, campanhas, usuarios, doacao |
+| Blazor | Worker API | `HttpClient` nomeado `OngApiDonations` | Consulta de doacoes do usuario |
+| Kubernetes probes | Backend/Worker/Blazor | `readinessProbe/livenessProbe` | Validacao operacional |
+
+## 7. Comunicacao Assincrona (Eventos)
+
+### 7.1 Eventos Publicados
+
+| Publicador | Evento | Quando |
+|---|---|---|
+| Backend (`DonationService`) | `DonationReceivedEvent` | Ao receber `POST /donations` valido |
+| Worker API (`DonationReceivedConsumer`) | `DonationProcessedEvent` | Apos processar e persistir doacao |
+
+### 7.2 Eventos Consumidos
+
+| Consumidor | Evento | Acao |
+|---|---|---|
+| Worker API (`DonationReceivedConsumer`) | `DonationReceivedEvent` | Persiste doacao no Mongo de doacoes |
+| Backend (`DonationProcessedConsumer`) | `DonationProcessedEvent` | Atualiza valor arrecadado e status da campanha |
+
+## 8. Bancos, Mensageria e Estado
+
+| Recurso | Uso observado | Configuracao |
+|---|---|---|
+| MongoDB | Persistencia de usuarios/campanhas e doacoes | `mongodb` StatefulSet + Secret + Service headless |
+| RabbitMQ | Broker de eventos de doacao | Deployment `rabbitmq:3-management`, Service AMQP/Management |
+| Elasticsearch | Indexacao de logs (Serilog sink) | Deployment + Services interno/externo |
+| Kibana | Visualizacao de logs | Deployment + Service |
+| APM Server | Coleta de traces APM | Deployment + Services interno/externo |
+
+## 9. Autenticacao e Autorizacao
+
+### 9.1 Autenticacao
+
+- JWT Bearer em Backend e Worker API.
+- Login via `POST /auth/login` (Backend).
+- Token inclui `sub`, `email`, `name` e `role`.
+
+### 9.2 Autorizacao
+
+| Endpoint/Grupo | Regra |
+|---|---|
+| `/users/register`, endpoints de transparencia | Anonimo |
+| `/users/me` | Autenticado |
+| `/donations` | Role `Donor` ou `ManagerOng` |
+| `/admin/users/*` | Role `ManagerOng` |
+| `/admin/campaigns/*` e `POST /campaigns` | Role `ManagerOng` |
+| Worker API `GET /donations` | Role `Donor` ou `ManagerOng` |
+
+## 10. Observabilidade
+
+### 10.1 Logging
+
+- Serilog em Backend, Worker API e Blazor.
+- Saidas:
+  - Console
+  - Elasticsearch via `Elastic.Serilog.Sinks`
+- Enrichment:
+  - Environment, CorrelationId, MachineName, Elastic APM correlation.
+
+### 10.2 Metricas
+
+- `prometheus-net.AspNetCore` com:
+  - `app.UseHttpMetrics()`
+  - `app.MapMetrics()`
+- Endpoints esperados: `/metrics`.
+- ServiceMonitors definidos em `k8s/observabilidade/metrics-servicemonitors.yaml` para backend, frontend e worker.
+
+### 10.3 Health Checks
+
+| Componente | Endpoints | O que valida |
+|---|---|---|
+| Backend API | `/health`, `/health/live`, `/health/ready` | Liveness local + readiness MongoDB |
+| Worker API | `/health`, `/health/live`, `/health/ready` | Liveness local + health de bus/MassTransit |
+| Blazor | `/health`, `/health/live`, `/health/ready` | Liveness local + reachability da API |
+| Worker executavel alternativo | `http://localhost:9000/health*` | Health exposto por `HttpListener` manual |
+
+## 11. CI/CD Observado
+
+Cada repositorio principal (Backend, Worker, Blazor) possui workflow `.github/workflows/docker-image.yml` com:
+
+1. `dotnet restore`
+2. `dotnet build`
+3. `dotnet test`
+4. Login Docker Hub
+5. Build + push da imagem `latest` e `${{ github.sha }}`
+
+Imagens referenciadas nos manifests:
+
+- `antniocarlod18/fiap-ong-esperanca-solidaria-backend:latest`
+- `antniocarlod18/fiap-ong-esperanca-solidaria-worker:latest`
+- `antniocarlod18/fiap-ong-esperanca-solidaria-frontend:latest`
+
+## 12. Como Executar Localmente
+
+## 12.1 Pre-requisitos
+
+- .NET SDK 10
+- Docker Desktop
+- Docker CLI
+- kubectl
+- Cluster Kubernetes habilitado no Docker Desktop
+- (Opcional) Helm, caso precise instalar Prometheus/Grafana
+
+## 12.2 Build e testes (solucoes)
+
+```bash
+# Backend
+cd Fiap.Ong.Esperanca.Solidaria
+dotnet restore Fiap.Ong.Esperanca.Solidaria.slnx
+dotnet build Fiap.Ong.Esperanca.Solidaria.slnx -c Release
+dotnet test Fiap.Ong.Esperanca.Solidaria.slnx -c Release --no-build
+
+# Worker
+cd ..\Fiap.Ong.Esperanca.Solidaria.Worker
+dotnet restore Fiap.Ong.Esperanca.Solidaria.Worker.slnx
+dotnet build Fiap.Ong.Esperanca.Solidaria.Worker.slnx -c Release
+dotnet test Fiap.Ong.Esperanca.Solidaria.Worker.slnx -c Release --no-build
+
+# Blazor
+cd ..\Fiap.Ong.Esperanca.Solidaria.BlazorApp
+dotnet restore Fiap.Ong.Esperanca.Solidaria.BlazorApp.slnx
+dotnet build Fiap.Ong.Esperanca.Solidaria.BlazorApp.slnx -c Release
+dotnet test Fiap.Ong.Esperanca.Solidaria.BlazorApp.slnx -c Release --no-build
+```
+
+Observacao importante: nao foi encontrado `docker-compose.yml` nas 4 pastas analisadas.
+
+## 12.3 Build de imagens Docker
+
+```bash
+# Backend API
+cd Fiap.Ong.Esperanca.Solidaria
+docker build -f Fiap.Ong.Esperanca.Solidaria.Api/Dockerfile -t fiap-ong-backend:local .
+
+# Worker API
+cd ..\Fiap.Ong.Esperanca.Solidaria.Worker
+docker build -f Fiap.Ong.Esperanca.Solidaria.Worker.Api/Dockerfile -t fiap-ong-worker:local .
+
+# Frontend Blazor
+cd ..\Fiap.Ong.Esperanca.Solidaria.BlazorApp
+docker build -f Fiap.Ong.Esperanca.Solidaria.BlazorApp/Dockerfile -t fiap-ong-frontend:local .
+```
+
+## 12.4 Execucao local por processo (sem Kubernetes)
+
+Ordem recomendada:
+
+1. MongoDB
+2. RabbitMQ
+3. Elasticsearch
+4. APM Server
+5. Backend API
+6. Worker API
+7. Blazor
+
+Exemplo de inicializacao da aplicacao:
+
+```bash
+# Backend
+cd Fiap.Ong.Esperanca.Solidaria\Fiap.Ong.Esperanca.Solidaria.Api
+dotnet run
+
+# Worker API
+cd ..\..\Fiap.Ong.Esperanca.Solidaria.Worker\Fiap.Ong.Esperanca.Solidaria.Worker.Api
+dotnet run
+
+# Blazor
+cd ..\..\Fiap.Ong.Esperanca.Solidaria.BlazorApp\Fiap.Ong.Esperanca.Solidaria.BlazorApp
+dotnet run
+```
+
+## 13. Deploy no Kubernetes (ordem correta)
+
+Os manifests estao em `Fiap.Ong.Esperanca.Solidaria.Infraestructure/k8s`.
+
+### 13.1 Preparacao
+
+```bash
+cd Fiap.Ong.Esperanca.Solidaria.Infraestructure
+
+# Namespace para ServiceMonitors (caso nao exista)
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+```
+
+### 13.2 Ordem de aplicacao recomendada
+
+1. Observabilidade base (Elastic, APM, Kibana)
+2. RabbitMQ (ConfigMap, Secret, PVC, Deployment, Service)
+3. MongoDB (Secret, StatefulSet, Service)
+4. Backend (ConfigMap, Secret, Deployment, Service)
+5. Worker (ConfigMap, Secret, Deployment, Service)
+6. Frontend (ConfigMap, Secret, Deployment, Service)
+7. ServiceMonitors (apos Prometheus Operator existir)
+
+### 13.3 Comandos kubectl
+
+```bash
+# 1) Observabilidade
+kubectl apply -f k8s/observabilidade/secret.yaml
+kubectl apply -f k8s/observabilidade/deployment.yaml
+kubectl apply -f k8s/observabilidade/service.yaml
+kubectl apply -f k8s/observabilidade/elastic-out-service.yaml
+kubectl apply -f k8s/observabilidade/apm-deployment.yaml
+kubectl apply -f k8s/observabilidade/apm-service.yaml
+kubectl apply -f k8s/observabilidade/apm-out-service.yaml
+kubectl apply -f k8s/observabilidade/kibana-setup.yaml
+kubectl apply -f k8s/observabilidade/kibana-deployment.yaml
+kubectl apply -f k8s/observabilidade/kibana-service.yaml
+
+# 2) RabbitMQ
+kubectl apply -f k8s/rabbitmq/configmap.yaml
+kubectl apply -f k8s/rabbitmq/secret.yaml
+kubectl apply -f k8s/rabbitmq/pvc.yaml
+kubectl apply -f k8s/rabbitmq/deployment.yaml
+kubectl apply -f k8s/rabbitmq/service.yaml
+
+# 3) MongoDB
+kubectl apply -f k8s/mongo/secret.yaml
+kubectl apply -f k8s/mongo/deployment.yaml
+kubectl apply -f k8s/mongo/service.yaml
+
+# 4) Backend
+kubectl apply -f k8s/backend/configmap.yaml
+kubectl apply -f k8s/backend/secret.yaml
+kubectl apply -f k8s/backend/deployment.yaml
+kubectl apply -f k8s/backend/service.yaml
+
+# 5) Worker
+kubectl apply -f k8s/worker/configmap.yaml
+kubectl apply -f k8s/worker/secret.yaml
+kubectl apply -f k8s/worker/deployment.yaml
+kubectl apply -f k8s/worker/service.yaml
+
+# 6) Frontend
+kubectl apply -f k8s/frontend/configmap.yaml
+kubectl apply -f k8s/frontend/secret.yaml
+kubectl apply -f k8s/frontend/deployment.yaml
+kubectl apply -f k8s/frontend/service.yaml
+
+# 7) ServiceMonitors (depende de Prometheus Operator)
+kubectl apply -f k8s/observabilidade/metrics-servicemonitors.yaml
+```
+
+## 14. Validacao Operacional
+
+### 14.1 Verificar pods e services
+
+```bash
+kubectl get pods -A
+kubectl get svc -A
+kubectl get deployments -A
+kubectl get statefulsets -A
+```
+
+### 14.2 Verificar health checks
+
+```bash
+kubectl port-forward svc/backend-api 8089:80
+curl http://localhost:8089/health
+curl http://localhost:8089/health/live
+curl http://localhost:8089/health/ready
+
+kubectl port-forward svc/worker 8090:80
+curl http://localhost:8090/health
+
+kubectl port-forward svc/blazor-frontend 8088:80
+curl http://localhost:8088/health
+```
+
+### 14.3 Verificar logs
+
+```bash
+kubectl logs deploy/backend-api
+kubectl logs deploy/worker
+kubectl logs deploy/blazor-frontend
+kubectl logs deploy/rabbitmq
+kubectl logs statefulset/mongodb
+```
+
+## 15. Prometheus, Grafana e Kibana
+
+### 15.1 Kibana
+
+```bash
+kubectl port-forward svc/kibana 5601:5601
+```
+
+### 15.2 Prometheus e Grafana
+
+O repositorio presume que Prometheus/Grafana ja estejam instalados no cluster (ex.: stack externa como kube-prometheus).
+
+Port-forward (somente se esses services existirem):
+
+```bash
+kubectl port-forward svc/prometheus-grafana 3000:80 --namespace monitoring
+kubectl port-forward svc/prometheus-kube-prometheus-prometheus 9090:9090 --namespace monitoring
+```
+
+## 16. Elastic Stack
+
+| Componente | Manifestos |
+|---|---|
+| Elasticsearch | `deployment.yaml`, `service.yaml`, `elastic-out-service.yaml` |
+| APM Server | `apm-deployment.yaml`, `apm-service.yaml`, `apm-out-service.yaml` |
+| Kibana | `kibana-setup.yaml`, `kibana-deployment.yaml`, `kibana-service.yaml` |
+
+## 17. Comandos Rapidos (Checklist de Subida)
+
+1. Criar namespace monitoring (se necessario)
+2. Aplicar Secrets/Deployments/Services de observabilidade
+3. Aplicar RabbitMQ (ConfigMap, Secret, PVC, Deployment, Service)
+4. Aplicar MongoDB
+5. Aplicar Backend
+6. Aplicar Worker
+7. Aplicar Frontend
+8. Aplicar ServiceMonitors
+9. Validar health checks
+10. Verificar pods
+11. Verificar logs
+12. Validar Prometheus
+13. Validar Grafana
+14. Validar Kibana
+
+## 18. Decisoes Arquiteturais
+
+- Separacao clara de responsabilidades em camadas e projetos distintos.
+- Uso de eventos para desacoplar recebimento de doacao do processamento efetivo.
+- Atualizacao eventual de campanha via evento de retorno (`DonationProcessedEvent`).
+- Health checks separados por `live` e `ready` para operacao em Kubernetes.
+- Instrumentacao de metricas e logs centralizados para operabilidade.
